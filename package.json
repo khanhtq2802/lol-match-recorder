@@ -1,0 +1,43 @@
+{
+	"name": "lol-match-recorder",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Records League of Legends matches from champ select to the end of the game, with the microphone",
+	"author": "khanhtq1",
+	"license": "MIT",
+	"main": "electron/main.cjs",
+	"scripts": {
+		"start": "node electron/launch.cjs",
+		"dist": "electron-builder --win",
+		"release": "electron-builder --win zip"
+	},
+	"dependencies": {
+		"ffmpeg-static": "^5.2.0"
+	},
+	"devDependencies": {
+		"electron": "^39.8.10",
+		"electron-builder": "^25.1.8"
+	},
+	"build": {
+		"appId": "com.lolmatchrecorder.app",
+		"productName": "LOL Match Recorder",
+		"directories": {
+			"output": "dist"
+		},
+		"files": [
+			"package.json",
+			"electron/**/*.cjs",
+			"!electron/launch.cjs",
+			"static/desktop-icon.ico"
+		],
+		"win": {
+			"icon": "static/desktop-icon.ico",
+			"signAndEditExecutable": false,
+			"artifactName": "LOL-Match-Recorder-${version}-portable.${ext}",
+			"target": [
+				"dir"
+			]
+		},
+		"asar": false
+	}
+}
