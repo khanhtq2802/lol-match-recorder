@@ -9,7 +9,7 @@
 	"scripts": {
 		"start": "node electron/launch.cjs",
 		"dist": "electron-builder --win",
-		"release": "electron-builder --win zip"
+		"release": "electron-builder --win nsis"
 	},
 	"dependencies": {
 		"ffmpeg-static": "^5.2.0"
@@ -38,6 +38,18 @@
 				"dir"
 			]
 		},
-		"asar": false
+		"asar": false,
+		"nsis": {
+			"oneClick": true,
+			"perMachine": false,
+			"runAfterFinish": true,
+			"createDesktopShortcut": true,
+			"createStartMenuShortcut": true,
+			"shortcutName": "LOL Match Recorder",
+			"installerIcon": "static/desktop-icon.ico",
+			"uninstallerIcon": "static/desktop-icon.ico",
+			"include": "build/installer.nsh",
+			"artifactName": "LOL-Match-Recorder-Setup-${version}.${ext}"
+		}
 	}
 }

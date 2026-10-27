@@ -11,6 +11,14 @@ Desktop app (Electron, system tray) that records your League of Legends matches 
 - Saved as `YYYY-MM-DD_HH-mm_<Queue>_<Champion>.mp4` in `Videos\LOL Match Recorder` by default
 - Records to `.mkv` while the match runs, so a crash or a power cut still leaves a playable file, then turns it into `.mp4` at the end
 
+## Install
+
+1. Download `LOL-Match-Recorder-Setup-<version>.exe` from the [latest release](https://github.com/khanhtq2802/lol-match-recorder/releases/latest).
+2. Run it. It installs the app for your Windows user (no admin rights needed), adds a desktop and Start menu shortcut, and starts the app.
+3. Windows may show "Windows protected your PC" because the installer is not signed: click `More info`, then `Run anyway`.
+
+To update, run the setup of the new version, your settings are kept. To uninstall, use `Settings > Apps > Installed apps > LOL Match Recorder`.
+
 ## How to use
 
 1. Run the app. It sits in the system tray (red dot on the icon while recording). The packaged app starts with Windows (untick "Start with Windows" in the tray menu to stop it).
@@ -46,6 +54,6 @@ npm start
 # package the app into dist/win-unpacked ("LOL Match Recorder.exe")
 npm run dist
 
-# build the release zip (dist/LOL-Match-Recorder-<version>-portable.zip)
+# build the installer (dist/LOL-Match-Recorder-Setup-<version>.exe)
 npm run release
 ```
