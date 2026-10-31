@@ -12,6 +12,8 @@ const defaults = () => ({
 	micName: null,
 	// false: record without sound
 	micEnabled: true,
+	// the voices of other people: off until the user asks for it
+	discordEnabled: false,
 	bitrateMbps: 8
 });
 

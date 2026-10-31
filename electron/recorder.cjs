@@ -1,4 +1,4 @@
-// Records the main screen and a microphone with ffmpeg.
+// Records the main screen, a microphone and the Discord voice chat with ffmpeg.
 // The screen comes from the Desktop Duplication API (ddagrab), encoded on the GPU when there is one.
 // It records to .mkv, which stays playable if the app or ffmpeg dies, and remuxes to .mp4 at the end.
 const { spawn } = require('node:child_process');
@@ -9,8 +9,12 @@ const FRAMERATE = 30;
 const SCREEN_INPUT = ['-f', 'lavfi', '-i', `ddagrab=output_idx=0:framerate=${FRAMERATE}`];
 // ffmpeg gets this long to finish the file after 'q' before it is killed
 const STOP_TIMEOUT = 10000;
-// an exit this soon after the start is a mic that can't be opened: retry without it
+// an exit this soon after the start is a sound source that can't be opened: retry without it
 const EARLY_EXIT = 5000;
+// the Discord desktop app, in its release channels
+const DISCORD_PROCESSES = ['Discord', 'DiscordPTB', 'DiscordCanary', 'DiscordDevelopment'];
+// the audio helper gets this long to start, else the recording goes on without it
+const CAPTURE_START_TIMEOUT = 5000;
 
 // ddagrab outputs D3D11 frames: NVENC takes them as is, the others need them in system memory.
 // No B-frames, the screen frames come at irregular times.
@@ -101,6 +105,25 @@ function waitForExit(proc, timeout) {
 	});
 }
 
+/**
+ * Starts the helper that captures the Discord voice chat (see native/ProcessAudio.cs).
+ * @returns {Promise<{ proc: import('node:child_process').ChildProcess, pipe: string } | null>}
+ */
+function startDiscordCapture(helperPath) {
+	return new Promise((resolve) => {
+		const name = `lol-match-recorder-${process.pid}-${Date.now()}`;
+		const proc = spawn(helperPath, [name, DISCORD_PROCESSES.join(',')], { windowsHide: true });
+		const timer = setTimeout(() => proc.kill(), CAPTURE_START_TIMEOUT);
+		const done = (capture) => {
+			clearTimeout(timer);
+			resolve(capture);
+		};
+		proc.stdout.once('data', () => done({ proc, pipe: `\\\\.\\pipe\\${name}` }));
+		proc.on('error', () => done(null));
+		proc.on('exit', () => done(null));
+	});
+}
+
 function removeFile(file) {
 	try {
 		fs.rmSync(file, { force: true });
@@ -119,16 +142,17 @@ function uniquePath(file) {
 
 class Recorder {
 	/**
-	 * @param {{ ffmpegPath: string, logFile?: string }} options
+	 * @param {{ ffmpegPath: string, helperPath: string, logFile?: string }} options
 	 */
-	constructor({ ffmpegPath, logFile }) {
+	constructor({ ffmpegPath, helperPath, logFile }) {
 		this.ffmpegPath = ffmpegPath;
+		this.helperPath = helperPath;
 		this.logFile = logFile;
 		/** @type {(typeof ENCODERS)[number] | null} */
 		this.encoder = null;
 		/** @type {Promise<(typeof ENCODERS)[number]> | null} */
 		this.probing = null;
-		/** @type {{ proc: import('node:child_process').ChildProcess, file: string, startedAt: number, withMic: boolean } | null} */
+		/** @type {{ proc: import('node:child_process').ChildProcess, file: string, startedAt: number, stopping?: boolean } | null} */
 		this.current = null;
 	}
 
@@ -182,19 +206,27 @@ class Recorder {
 
 	/**
 	 * Starts recording to `file` (.mkv).
-	 * @param {{ file: string, micName?: string | null, bitrateMbps: number }} options
+	 * @param {{ file: string, micName?: string | null, discord?: boolean, bitrateMbps: number }} options
 	 */
-	async start({ file, micName, bitrateMbps }) {
+	async start({ file, micName, discord = false, bitrateMbps }) {
 		if (this.current) return;
 		const encoder = await this.probeEncoder();
 		// record without sound rather than not at all when the mic is unplugged
 		const withMic = !!micName && (await this.listMics()).includes(micName);
 		fs.mkdirSync(path.dirname(file), { recursive: true });
-		this.spawnRecording({ file, micName: withMic ? micName : null, bitrateMbps, encoder });
+		await this.spawnRecording({ file, micName: withMic ? micName : null, discord, bitrateMbps, encoder });
 	}
 
-	spawnRecording({ file, micName, bitrateMbps, encoder }) {
-		const audioInput = micName
+	/** @param {NonNullable<Recorder['current']>} [retryOf] the recording this one replaces */
+	async spawnRecording({ file, micName, discord, bitrateMbps, encoder }, retryOf) {
+		const capture = discord ? await startDiscordCapture(this.helperPath) : null;
+		// stopped while the helper was starting
+		if (retryOf && (this.current !== retryOf || retryOf.stopping)) {
+			capture?.proc.kill();
+			return;
+		}
+
+		const micInput = micName
 			? [
 					'-f',
 					'dshow',
@@ -206,14 +238,31 @@ class Recorder {
 					`audio=${micName}`
 			  ]
 			: [];
-		const audioOutput = micName ? ['-map', '1:a', '-c:a', 'aac', '-b:a', '160k'] : [];
+		const discordInput = capture
+			? ['-f', 's16le', '-ar', '48000', '-ac', '2', '-thread_queue_size', '1024', '-i', capture.pipe]
+			: [];
+		// the screen is input 0, the sounds follow it
+		const audioMap =
+			micName && capture
+				? [
+						'-filter_complex',
+						// no normalizing, it would turn the voices down. The limiter keeps the sum from clipping.
+						'[1:a][2:a]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.97:level=0[audio]',
+						'-map',
+						'[audio]'
+				  ]
+				: micName || capture
+				? ['-map', '1:a']
+				: [];
+		const audioOutput = audioMap.length ? [...audioMap, '-c:a', 'aac', '-b:a', '160k'] : [];
 		const args = [
 			'-hide_banner',
 			'-loglevel',
 			'warning',
 			'-y',
 			...SCREEN_INPUT,
-			...audioInput,
+			...micInput,
+			...discordInput,
 			'-map',
 			'0:v',
 			...encoder.args(bitrateMbps),
@@ -222,19 +271,26 @@ class Recorder {
 		];
 
 		const proc = spawn(this.ffmpegPath, args, { windowsHide: true });
-		const current = { proc, file, startedAt: Date.now(), withMic: !!micName };
+		const current = { proc, file, startedAt: Date.now() };
 		this.current = current;
 
 		const log = this.logFile ? fs.createWriteStream(this.logFile) : null;
 		log?.write(`ffmpeg ${args.join(' ')}\n\n`);
-		proc.stderr.on('data', (chunk) => log?.write(chunk));
-		proc.on('error', () => {});
+		const writeLog = (chunk) => {
+			if (log && !log.writableEnded) log.write(chunk);
+		};
+		proc.stderr.on('data', writeLog);
+		capture?.proc.stderr.on('data', writeLog);
+		proc.on('error', () => capture?.proc.kill());
 		proc.on('exit', (code) => {
+			capture?.proc.kill();
 			log?.end(`\nexit ${code}\n`);
 			// still the running recording, and it was not stopped: ffmpeg failed
 			if (this.current !== current || current.stopping) return;
-			if (current.withMic && Date.now() - current.startedAt < EARLY_EXIT) {
-				this.spawnRecording({ file, micName: null, bitrateMbps, encoder });
+			if ((micName || capture) && Date.now() - current.startedAt < EARLY_EXIT) {
+				// the mic first, it is the most likely to fail
+				const retry = { file, micName: null, discord: micName ? !!capture : false, bitrateMbps, encoder };
+				this.spawnRecording(retry, current);
 			}
 		});
 	}

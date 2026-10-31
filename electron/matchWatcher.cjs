@@ -105,6 +105,7 @@ class MatchWatcher extends EventEmitter {
 			await this.recorder.start({
 				file: path.join(settings.outputDir, `${stamp(startedAt)}_recording.mkv`),
 				micName,
+				discord: settings.discordEnabled,
 				bitrateMbps: settings.bitrateMbps
 			});
 		} catch (error) {

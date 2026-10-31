@@ -1,14 +1,18 @@
 {
 	"name": "lol-match-recorder",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"private": true,
 	"description": "Records League of Legends matches from champ select to the end of the game, with the microphone",
 	"author": "khanhtq1",
 	"license": "MIT",
 	"main": "electron/main.cjs",
 	"scripts": {
+		"build:helper": "node native/build.cjs",
+		"prestart": "npm run build:helper",
 		"start": "node electron/launch.cjs",
+		"predist": "npm run build:helper",
 		"dist": "electron-builder --win",
+		"prerelease": "npm run build:helper",
 		"release": "electron-builder --win nsis"
 	},
 	"dependencies": {
@@ -28,7 +32,8 @@
 			"package.json",
 			"electron/**/*.cjs",
 			"!electron/launch.cjs",
-			"static/desktop-icon.ico"
+			"static/desktop-icon.ico",
+			"vendor/process-audio.exe"
 		],
 		"win": {
 			"icon": "static/desktop-icon.ico",

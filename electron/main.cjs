@@ -10,6 +10,7 @@ const { getSettings, updateSettings } = require('./settings.cjs');
 const APP_NAME = 'LOL Match Recorder';
 const TRAY_ICON = path.join(__dirname, '..', 'static', 'desktop-icon.ico');
 const BITRATES = [6, 8, 12];
+const AUDIO_HELPER = path.join(__dirname, '..', 'vendor', 'process-audio.exe');
 
 /** @type {Tray | null} */
 let tray = null;
@@ -184,6 +185,15 @@ function updateTrayMenu() {
 				]
 			},
 			{
+				label: 'Record Discord voice chat',
+				type: 'checkbox',
+				checked: settings.discordEnabled,
+				click: (item) => {
+					updateSettings({ discordEnabled: item.checked });
+					updateTrayMenu();
+				}
+			},
+			{
 				label: 'Quality',
 				submenu: BITRATES.map((mbps) => ({
 					label: `${mbps} Mbps (~${Math.round((mbps * 60) / 8 / 10) * 10} MB/min)`,
@@ -219,6 +229,7 @@ if (!app.requestSingleInstanceLock()) {
 		recorder = new Recorder({
 			// the packaged app keeps node_modules unpacked (no asar)
 			ffmpegPath,
+			helperPath: AUDIO_HELPER,
 			logFile: path.join(app.getPath('userData'), 'ffmpeg-last.log')
 		});
 		watcher = new MatchWatcher({ recorder, getSettings });
